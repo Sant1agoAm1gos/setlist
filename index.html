@@ -50,12 +50,13 @@ let S=[],H=['Сетліст',''],view=null,editTxt=false,TOKEN='',R='';
 try{TOKEN=localStorage.getItem('gh_token')||''}catch(e){}
 function repo(){const h=location.hostname;if(h.endsWith('.github.io'))return h.split('.')[0]+'/'+(location.pathname.split('/')[1]||'');
   try{return localStorage.getItem('gh_repo')||''}catch(e){return ''}}
+R=repo();
 const stEl=()=>document.getElementById('st');
 function setSt(t){const s=stEl();s.textContent=t;s.style.opacity=t?1:0;if(t.includes('✓'))setTimeout(()=>{s.style.opacity=0},1800)}
 let timer,chain=Promise.resolve();
 function save(){if(!TOKEN)return;setSt('Збереження…');clearTimeout(timer);
   timer=setTimeout(()=>{chain=chain.then(push).then(()=>setSt('Збережено ✓'),e=>setSt('Помилка збереження: '+e.message))},700)}
-async function push(n=0){const url=`https://api.github.com/repos/${R}/contents/data.json`,h={Authorization:'Bearer '+TOKEN,Accept:'application/vnd.github+json'};
+async function push(n=0){if(!R)throw new Error('не знайдено репозиторій: натисни Вийти, потім Увійти');const url=`https://api.github.com/repos/${R}/contents/data.json`,h={Authorization:'Bearer '+TOKEN,Accept:'application/vnd.github+json'};
   const g=await fetch(url+'?t='+Date.now(),{headers:h});if(!g.ok&&g.status!=404)throw new Error(g.status+' - не вдалося прочитати data.json');const sha=g.ok?(await g.json()).sha:undefined;
   const content=btoa(unescape(encodeURIComponent(JSON.stringify({title:H[0],date:H[1],songs:S},null,1))));
   const p=await fetch(url,{method:'PUT',headers:h,body:JSON.stringify({message:'Оновлення сетліста',content,sha})});
