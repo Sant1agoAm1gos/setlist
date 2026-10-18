@@ -55,7 +55,8 @@ const FILL=/^(?:[|\/:.()\-–—]+|[xXхХ×]\d+|\d+[xXхХ×])$/;
 function chordLine(line){const w=line.trim().split(/\s+/);if(!w[0])return false;let c=0;
   for(let i=0;i<w.length;i++){const x=w[i];if(CH.test(x))c++;else if(FILL.test(x)||(i===0&&/^\S+:$/.test(x)))continue;else return false}
   return c>0}
-const isHead=l=>{const t=l.trim();return t.length<=32&&!chordLine(l)&&(/^\S.*:\s*([xXхХ×]\d+)?$/.test(t)||/^\[.*\]$/.test(t))};
+const SEC=/^(?:куплет|приспів|міст|інтро|інструментал|вставка|програш|кода|кінцівка|verse|chorus|pre-?chorus|bridge|intro|outro|interlude|instrumental|tag)(?:[\s\d:.\-–]|$)/i;
+const isHead=l=>{const t=l.trim();return t.length<=32&&!chordLine(l)&&(SEC.test(t)||/^\S.*:\s*([xXхХ×]\d+)?$/.test(t)||/^\[.*\]$/.test(t))};
 const isG=t=>t.split('\n').some(l=>chordLine(l)&&l.trim().split(/\s+/).some(w=>/^H/.test(w)&&CH.test(w)));
 const rIdx=(r,g)=>{const l=r[0],a=r[1],b=l==='H'?11:(l==='B'&&g)?10:LET[l];return(b+(a==='#'?1:a==='b'?-1:0)+12)%12};
 const nm=(i,acc,g)=>g&&i===10?'B':g&&i===11?'H':(acc==='b'?FL:SH)[i];
@@ -67,7 +68,12 @@ function tr(text,s,acc,g){return text.split('\n').map(line=>{if(!chordLine(line)
 const show=s=>{if(s.key===s.base&&!s.acc)return s.txt;return tr(s.txt,((kIdx(s.key)-kIdx(s.base))%12+12)%12,s.acc||defAcc(s.key),isG(s.txt))};
 const kl=(k,g)=>g?k.replace(/^Bb/,'\0').replace(/^B/,'H').replace(/^\0/,'B'):k;
 function viewText(t,m){if(m==='all')return t;
-  return t.split('\n').filter(l=>{const c=chordLine(l);return m==='lyrics'?!c:(c||isHead(l)||!l.trim())}).join('\n').replace(/\n{3,}/g,'\n\n').trim()}
+  const L=t.split('\n').filter(l=>{const c=chordLine(l);return m==='lyrics'?!c:(c||isHead(l)||!l.trim())});
+  if(m==='chords'){const o=[];let prev=false;
+    for(const l of L){if(chordLine(l)){const n=l.trim().split(/\s+/).join('  ');
+      if(prev&&!/:$/.test(n.split('  ')[0]))o[o.length-1]+='  '+n;else o.push(n);prev=true}else{o.push(l);prev=false}}
+    return o.join('\n').replace(/\n{3,}/g,'\n\n').trim()}
+  return L.join('\n').replace(/\n{3,}/g,'\n\n').trim()}
 //--PURE-END
 let S=[],H=['Сетліст',''],view=null,editTxt=false,TOKEN='',R='',vm='all';
 try{TOKEN=localStorage.getItem('gh_token')||'';vm=localStorage.getItem('vm')||'all'}catch(e){}
