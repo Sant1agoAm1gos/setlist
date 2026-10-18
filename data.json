@@ -5,16 +5,20 @@
   {
    "id": 1,
    "name": "Сходиш до нас (Room)",
-   "key": "G#",
+   "key": "Ab",
    "bpm": 65,
-   "txt": "G#        D#/G\nЦарю над царями\nFm       C#\nСлава Тобі навіки"
+   "txt": "G#        D#/G\nЦарю над царями\nFm       C#\nСлава Тобі навіки",
+   "base": "Ab",
+   "acc": null
   },
   {
    "id": 2,
    "name": "Ти потрібен (Give Me Jesus)",
    "key": "G",
    "bpm": 71,
-   "txt": "G   D   Em   C\nСвятий, святий, святий"
+   "txt": "G   D   Em   C\nСвятий, святий, святий",
+   "base": "G",
+   "acc": null
   }
  ]
 }
