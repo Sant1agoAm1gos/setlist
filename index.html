@@ -44,6 +44,17 @@ input.bpm{width:100px;text-align:center;font-size:28px;font-weight:800;backgroun
 input.bpm::-webkit-outer-spin-button,input.bpm::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .len{color:var(--mu);font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .tm{width:76px;text-align:center;font-size:22px;font-weight:700;background:var(--c2);border:1px solid var(--bd);border-radius:12px;padding:8px 4px}
+.pl{display:flex;align-items:center;gap:14px}
+.pp{width:54px;height:54px;border-radius:50%;background:var(--ac);border-color:var(--ac);color:#fff;padding:0;display:grid;place-items:center;flex:none;box-shadow:0 6px 20px #8b5cf655}
+.pw{flex:1;min-width:0}.tm2{display:flex;justify-content:space-between;color:var(--mu);font-size:13px;font-variant-numeric:tabular-nums;margin-top:6px}
+input[type=range].sk{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:99px;outline:0;margin:10px 0 0;padding:0;border:0;background:linear-gradient(to right,var(--ac) var(--p,0%),var(--c2) var(--p,0%));cursor:pointer}
+.sk::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:0;box-shadow:0 0 0 4px #8b5cf655}
+.sk::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:0}
+.sk::-moz-range-track{height:6px;border-radius:99px;background:linear-gradient(to right,var(--ac) var(--p,0%),var(--c2) var(--p,0%))}
+.yt{display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:14px;background:#000}
+.lnk{color:var(--ac2);font-size:14px;text-decoration:none;display:inline-block;margin-top:10px}
+.pe{color:#f87171;font-size:13px;margin-top:8px}
+input.f{width:100%;background:var(--c2);border:1px solid var(--bd);border-radius:12px;padding:10px}
 </style></head><body><main>
 <div id="app"></div></main><div id="st"></div>
 <script>
@@ -78,6 +89,7 @@ const fmtT=t=>{t=Math.round(t);const h=Math.floor(t/3600),m=Math.floor(t%3600/60
 const parseB=x=>{const v=parseFloat(String(x).replace(',','.'));return isNaN(v)?NaN:v};
 const hasLen=s=>typeof s.len==='number'&&s.len>0;
 const total=L=>{let t=0,miss=0;L.forEach(s=>{if(hasLen(s))t+=s.len;else{t+=270;miss++}});return{t,miss}};
+const ytId=u=>{u=String(u||'').trim();const m=u.match(/(?:youtu\.be\/|[?&]v=|embed\/|shorts\/|live\/)([\w-]{11})/);return m?m[1]:(/^[\w-]{11}$/.test(u)?u:null)};
 //--PURE-END
 let S=[],H=['Сетліст',''],view=null,editTxt=false,TOKEN='',R='',vm='all';
 try{TOKEN=localStorage.getItem('gh_token')||'';vm=localStorage.getItem('vm')||'all'}catch(e){}
@@ -90,6 +102,31 @@ function setSt(t){const s=$('st');s.textContent=t;s.style.opacity=t?1:0;if(t.inc
 let timer,chain=Promise.resolve();
 function save(){if(!TOKEN)return;setSt('Збереження…');clearTimeout(timer);
   timer=setTimeout(()=>{chain=chain.then(push).then(()=>setSt('Збережено ✓'),e=>setSt('Помилка збереження: '+e.message))},700)}
+const AU=new Audio(),LOCAL={};let AUid=null;AU.preload='metadata';
+const PLAY='<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',PAUSE='<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+const fT=t=>isFinite(t)&&t>0?fmtT(t):'0:00';
+function pUI(){const pp=$('pp');if(!pp)return;const d=AU.duration,c=AU.currentTime,p=d>0?c/d*100:0;
+  pp.innerHTML=AU.paused?PLAY:PAUSE;$('tc').textContent=fT(c);$('td').textContent=fT(d);$('sk').value=p*10;$('sk').style.setProperty('--p',p+'%');if(d>0)$('pe').textContent=''}
+function pInit(){if(!$('pp'))return;AU.ontimeupdate=AU.onloadedmetadata=AU.onplay=AU.onpause=AU.onended=pUI;
+  AU.onerror=()=>{const e=$('pe');if(e)e.textContent='Не вдається відтворити. Якщо файл щойно завантажено, зачекайте 1–2 хвилини й оновіть сторінку.'};
+  $('pp').onclick=()=>AU.paused?AU.play().catch(()=>{}):AU.pause();
+  $('sk').oninput=e=>{if(AU.duration)AU.currentTime=e.target.value/1000*AU.duration;pUI()};pUI()}
+const gh=(path,o={})=>fetch(`https://api.github.com/repos/${R}/contents/${path}`,{...o,headers:{Authorization:'Bearer '+TOKEN,Accept:'application/vnd.github+json'}});
+const chainRun=fn=>{const p=chain.then(fn);chain=p.catch(()=>{});return p};
+async function up(id,el){const f=el.files[0];el.value='';if(!f)return;const s=get(id);
+  if(f.size>25*1048576)return alert('Файл завеликий (максимум 25 МБ). Стисни mp3 до 128–192 kbps.');
+  if(!R)return alert('Не знайдено репозиторій: натисни Вийти, потім Увійти.');
+  setSt('Завантаження mp3…');
+  try{const b64=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=no;r.readAsDataURL(f)});
+    const ext=((f.name.match(/\.(\w{2,4})$/)||[])[1]||'mp3').toLowerCase(),path=`audio/${id}-${Date.now()}.${ext}`;
+    await chainRun(async()=>{const r=await gh(path,{method:'PUT',body:JSON.stringify({message:'Додано аудіо',content:b64})});
+      if(!r.ok){let m='';try{m=(await r.json()).message}catch(e){}throw new Error(r.status+(m?' - '+m:''))}});
+    const old=s.audio;s.audio=path;LOCAL[id]=URL.createObjectURL(f);AUid=null;save();go(id,false);if(old)delFile(old)}
+  catch(e){setSt('Помилка завантаження: '+e.message)}}
+function delFile(path){chainRun(async()=>{const g=await gh(path+'?t='+Date.now());if(!g.ok)return;const sha=(await g.json()).sha;
+  await gh(path,{method:'DELETE',body:JSON.stringify({message:'Видалено аудіо',sha})})}).catch(()=>{})}
+function rmA(id){if(!confirm('Видалити аудіофайл?'))return;const s=get(id),old=s.audio;s.audio=null;delete LOCAL[id];AU.pause();AUid=null;save();if(old)delFile(old);go(id,false)}
+function yc(id,el){const s=get(id),v=el.value.trim();if(!v)s.yt=null;else{const i=ytId(v);if(!i){alert('Не схоже на посилання YouTube');el.value=s.yt?'https://youtu.be/'+s.yt:'';return}s.yt=i}save();go(id,false)}
 async function push(n=0){if(!R)throw new Error('не знайдено репозиторій: натисни Вийти, потім Увійти');
   const url=`https://api.github.com/repos/${R}/contents/data.json`,h={Authorization:'Bearer '+TOKEN,Accept:'application/vnd.github+json'};
   const g=await fetch(url+'?t='+Date.now(),{headers:h});if(!g.ok&&g.status!=404)throw new Error(g.status+' - не вдалося прочитати data.json');
@@ -101,7 +138,7 @@ async function load(){let d=null;
   try{if(TOKEN&&R){const r=await fetch(`https://api.github.com/repos/${R}/contents/data.json?t=${Date.now()}`,{headers:{Authorization:'Bearer '+TOKEN,Accept:'application/vnd.github.raw+json'}});if(r.ok)d=await r.json()}}catch(e){}
   if(!d)try{d=await (await fetch('data.json?t='+Date.now())).json()}catch(e){}
   if(d){S=d.songs||[];H=[d.title||H[0],d.date||'']}
-  S.forEach(s=>{s.base=s.base||s.key;s.acc=s.acc||null;s.bpm=s.bpm||80;s.txt=s.txt||'';s.len=hasLen(s)?s.len:null})}
+  S.forEach(s=>{s.base=s.base||s.key;s.acc=s.acc||null;s.bpm=s.bpm||80;s.txt=s.txt||'';s.len=hasLen(s)?s.len:null;s.audio=s.audio||null;s.yt=s.yt||null})}
 async function login(){if(TOKEN){TOKEN='';try{localStorage.removeItem('gh_token')}catch(e){}return home()}
   R=repo();if(!R){R=prompt('Репозиторій у форматі логін/назва (наприклад ivan/setlist):')||'';if(!R)return}
   const t=(prompt('Встав токен GitHub (його бачиш тільки ти):')||'').trim();if(!t)return;
@@ -109,7 +146,7 @@ async function login(){if(TOKEN){TOKEN='';try{localStorage.removeItem('gh_token'
     if(!r.ok||!j.permissions||!j.permissions.push)return alert('Токен не підходить до цього репозиторію або не має права запису.');
     TOKEN=t;try{localStorage.setItem('gh_token',t);localStorage.setItem('gh_repo',R)}catch(e){}await load();home()}
   catch(e){alert('Не вдалося перевірити токен.')}}
-function home(){view=null;editTxt=false;$('app').className='';const A=!!TOKEN;
+function home(){view=null;editTxt=false;AU.pause();AUid=null;$('app').className='';const A=!!TOKEN;
   $('app').innerHTML=`<div class="eyebrow">Сетліст</div>
 <input class="t" id="title" value="${E(H[0])}" ${A?'':'readonly'}><input class="t" id="date" value="${E(H[1])}" ${A?'':'readonly'}>
 <div class="bar"><span>${S.length} пісень · ${(()=>{const q=total(S);return (q.miss?'~':'')+fmtT(q.t)+(q.miss?` (без тривалості: ${q.miss})`:'')})()}${A?' · тримай ⠿ і перетягуй':''}</span>${A?'<button class="p" onclick="add()">+ Пісня</button>':''}</div>
@@ -133,11 +170,15 @@ function dragStart(e){e.preventDefault();const card=e.target.closest('.song'),it
 function add(){if(!TOKEN)return;const s={id:Date.now(),name:'',key:'C',base:'C',acc:null,bpm:80,txt:''};S.push(s);save();editTxt=true;go(s.id)}
 function go(id,fresh=true){view=id;const s=get(id);if(!s)return home();const g=isG(s.txt),A=!!TOKEN,ea=s.acc||defAcc(s.key);
   $('app').className=fresh?'':'noanim';
+  if(AUid!==id){AU.pause();AUid=id;if(s.audio)AU.src=LOCAL[id]||s.audio;else AU.removeAttribute('src')}
   const opt=k=>`<option value="${k}" ${k==s.key?'selected':''}>${kl(k,g)}</option>`;
   const sel=`<select onchange="tk(${id},this.value)"><optgroup label="Мажор">${MAJ.map(opt).join('')}</optgroup><optgroup label="Мінор">${MIN.map(opt).join('')}</optgroup></select>`;
   const seg=`<div class="seg" style="flex:1">${[['all','Усе'],['chords','Акорди'],['lyrics','Текст']].map(([k,n])=>`<button class="${vm==k?'on':''}" onclick="setVm('${k}')">${n}</button>`).join('')}</div>`;
   const body=A&&editTxt?`<textarea id="tx" placeholder="Акорди пиши окремим рядком над текстом">${E(show(s))}</textarea>`:
     `<pre>${viewText(show(s),vm).split('\n').map(l=>chordLine(l)?'<span class="ch">'+E(l)+'</span>':E(l)).join('\n')||'<span style="color:var(--mu)">Порожньо</span>'}</pre>`;
+  const pl=s.audio?`<div class="pl"><button class="pp" id="pp" aria-label="Грати / пауза"></button><div class="pw"><input type="range" class="sk" id="sk" min="0" max="1000" value="0"><div class="tm2"><span id="tc">0:00</span><span id="td">0:00</span></div></div></div><div class="pe" id="pe"></div>`:'';
+  const aBox=(s.audio||A)?`<div class="box"><label>Плейбек</label>${pl}${A?`<input type="file" id="fa" accept="audio/*,.mp3" hidden onchange="up(${id},this)"><div class="r" style="margin-top:${s.audio?14:0}px"><button onclick="$('fa').click()">${s.audio?'Замінити mp3':'+ Завантажити mp3'}</button>${s.audio?`<button class="x" onclick="rmA(${id})">Видалити файл</button>`:''}</div>`:''}</div>`:'';
+  const yBox=(s.yt||A)?`<div class="box"><label>Виконання на YouTube</label>${s.yt?`<iframe class="yt" src="https://www.youtube-nocookie.com/embed/${s.yt}?playsinline=1&rel=0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture" allowfullscreen loading="lazy"></iframe><a class="lnk" href="https://www.youtube.com/watch?v=${s.yt}" target="_blank" rel="noopener">Відкрити на YouTube ↗</a>`:''}${A?`<input class="f" type="text" placeholder="Посилання на YouTube" value="${s.yt?'https://youtu.be/'+s.yt:''}" style="margin-top:${s.yt?14:0}px" onchange="yc(${id},this)">`:''}</div>`:'';
   $('app').innerHTML=`<button class="back" onclick="home()">← Сетліст</button>
 <input class="t" id="nm" style="font-size:26px;font-weight:800" placeholder="Назва пісні" value="${E(s.name)}" ${A?'':'readonly'}>
 ${A?`<div class="box"><label>${editTxt?'Тональність акордів у тексті':'Тональність'}</label><div class="r">
@@ -151,8 +192,9 @@ ${!editTxt&&s.key!==s.base?`<div class="meta">оригінал: ${kl(s.base,g)}<
 `<div class="box r" style="gap:12px"><span class="pill k" style="font-size:20px">${kl(s.key,g)}</span><span class="pill" style="font-size:20px">${fmtB(s.bpm)} BPM</span>${hasLen(s)?`<span class="pill" style="font-size:20px">${fmtT(s.len)}</span>`:''}</div>`}
 <div class="box"><div class="r" style="margin-bottom:12px">${editTxt?'<label style="margin:0;flex:1">Акорди й текст</label>':seg}
 ${A?`<button onclick="editTxt=!editTxt;go(${id},false)">${editTxt?'Готово':'Редагувати'}</button>`:''}</div>${body}</div>
+${aBox}${yBox}
 ${A?`<button class="x" style="margin-top:14px" onclick="del(${id})">Видалити пісню</button>`:''}`;
-  if(A){$('nm').oninput=e=>{s.name=e.target.value;save()};if($('tx'))$('tx').oninput=e=>{s.txt=e.target.value;s.base=s.key;s.acc=null;save()}}}
+  if(A){$('nm').oninput=e=>{s.name=e.target.value;save()};if($('tx'))$('tx').oninput=e=>{s.txt=e.target.value;s.base=s.key;s.acc=null;save()}}pInit()}
 function setVm(v){vm=v;try{localStorage.setItem('vm',v)}catch(e){}go(view,false)}
 function tk(id,k){const s=get(id);if(editTxt){s.txt=show(s);s.base=k}s.key=k;s.acc=null;save();go(id,false)}
 function tp(id,d){const s=get(id),n=((kIdx(s.key)+d)%12+12)%12;tk(id,(s.key.endsWith('m')?MIN:MAJ)[n])}
