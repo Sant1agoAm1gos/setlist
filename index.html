@@ -64,7 +64,8 @@ button:disabled{opacity:.35}
 .stt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .snav{position:sticky;bottom:0;background:var(--bg);padding:10px 0 calc(10px + env(safe-area-inset-bottom,0px));display:flex;gap:8px}.snav button{min-height:48px}
 .stg pre{margin:0 0 24px}
-</style></head><body><main>
+</style><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
+</head><body><main>
 <div id="app"></div></main><div id="st"></div>
 <script>
 const MAJ=['C','Db','D','Eb','E','F','F#','G','Ab','A','Bb','B'],MIN=['Cm','C#m','Dm','Ebm','Em','Fm','F#m','Gm','G#m','Am','Bbm','Bm'];
@@ -106,82 +107,219 @@ const fmtD=s=>{if(!s.date)return 'Без дати';const d=new Date(s.date+'T12:
 const sortUp=(L,now)=>L.filter(s=>!isPast(s,now)).sort((a,b)=>{const x=slTs(a),y=slTs(b);return x===null?(y===null?0:1):y===null?-1:x-y});
 const sortPast=(L,now)=>L.filter(s=>isPast(s,now)).sort((a,b)=>slTs(b)-slTs(a));
 //--PURE-END
-let SL=[],S=[],cur=null,ST={v:'menu',d:0},TAB='up',view=null,editTxt=false,TOKEN='',R='',vm='all',fs=17;
-try{TOKEN=localStorage.getItem('gh_token')||'';vm=localStorage.getItem('vm')||'all';fs=+localStorage.getItem('fs')||17}catch(e){}
-function repo(){const h=location.hostname;if(h.endsWith('.github.io'))return h.split('.')[0]+'/'+(location.pathname.split('/')[1]||'');
-  try{return localStorage.getItem('gh_repo')||''}catch(e){return ''}}
-R=repo();
-const $=id=>document.getElementById(id),get=id=>S.find(x=>x.id==id);
-const E=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const sb=supabase.createClient('https://lqyvyegcwduyscheqodt.supabase.co','sb_publishable_2dh7RkApSmP02UVwzb9s_w_K2i3I3oS');
+let ME=null,SONGS=[],SL=[],S=[],cur=null,CX={},ST={v:'menu',d:0},TAB='up',view=null,editTxt=false,vm='all',fs=17,LQ='',AM='in',lastOwn=0,rt=null,rtT=null,dragging=false;
+try{vm=localStorage.getItem('vm')||'all';fs=+localStorage.getItem('fs')||17}catch(e){}
+const $=id=>document.getElementById(id);
+const E=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const isL=()=>!!ME&&ME.role==='leader';
+const songOf=id=>SONGS.find(x=>x.id===id);
+const norm=s=>{s.name=s.title;s.len=s.length_sec;s.base=s.base_key;s.yt=s.youtube;s.audio=s.audio_path;s.bpm=+s.bpm;return s};
+const mk=(s,it)=>s?{...s,key:(it&&it.key)||s.base,acc:(it&&it.acc)||null,item:it||null}:null;
+const rows=l=>l.items.map(it=>mk(songOf(it.song_id),it)).filter(Boolean);
 function setSt(t){const s=$('st');s.textContent=t;s.style.opacity=t?1:0;if(t.includes('✓'))setTimeout(()=>{s.style.opacity=0},1800)}
-let timer,chain=Promise.resolve();
-function save(){if(!TOKEN)return;setSt('Збереження…');clearTimeout(timer);
-  timer=setTimeout(()=>{chain=chain.then(push).then(()=>setSt('Збережено ✓'),e=>setSt('Помилка збереження: '+e.message))},700)}
-const AU=new Audio(),LOCAL={};let AUid=null;AU.preload='metadata';
+const fail=e=>setSt('Помилка: '+((e&&e.message)||e));
+const PQ={};
+function upd(t,id,p){lastOwn=Date.now();const k=t+id,q=PQ[k]=PQ[k]||{p:{}};Object.assign(q.p,p);clearTimeout(q.tm);setSt('Збереження…');
+  q.tm=setTimeout(async()=>{delete PQ[k];lastOwn=Date.now();const r=await sb.from(t).update(q.p).eq('id',id);setSt(r.error?'Помилка збереження: '+r.error.message:'Збережено ✓')},600)}
+const setS=p=>{Object.assign(CX.song,p);norm(CX.song);upd('songs',CX.song.id,p)};
+const setI=p=>{if(CX.item){Object.assign(CX.item,p);upd('setlist_items',CX.item.id,p)}};
+async function loadAll(){
+  const [a,b,c]=await Promise.all([sb.from('songs').select('*').order('title'),sb.from('setlists').select('*'),sb.from('setlist_items').select('*').order('position')]);
+  const e=a.error||b.error||c.error;if(e)throw e;
+  SONGS=a.data.map(norm);SL=b.data.map(l=>({...l,date:l.date||'',time:(l.time||'').slice(0,5),items:c.data.filter(i=>i.setlist_id===l.id)}))}
+function subscribe(){if(rt)return;
+  rt=sb.channel('rt').on('postgres_changes',{event:'*',schema:'public'},()=>{if(Date.now()-lastOwn<1500)return;clearTimeout(rtT);
+    rtT=setTimeout(async()=>{try{await loadAll();const a=document.activeElement,typing=a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)&&$('app').contains(a);
+      if(ME&&!typing&&!dragging&&view!=='stage'&&view!=='auth')rr()}catch(e){}},500)}).subscribe()}
+// ---------- аудіо
+const AU=new Audio(),AUC={};let AUid=null;AU.preload='metadata';
 const PLAY='<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',PAUSE='<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
 const fT=t=>isFinite(t)&&t>0?fmtT(t):'0:00';
 function pUI(){const pp=$('pp');if(!pp)return;const d=AU.duration,c=AU.currentTime,p=d>0?c/d*100:0;
   pp.innerHTML=AU.paused?PLAY:PAUSE;$('tc').textContent=fT(c);$('td').textContent=fT(d);$('sk').value=p*10;$('sk').style.setProperty('--p',p+'%');if(d>0)$('pe').textContent=''}
 function pInit(){if(!$('pp'))return;AU.ontimeupdate=AU.onloadedmetadata=AU.onplay=AU.onpause=AU.onended=pUI;
-  AU.onerror=()=>{const e=$('pe');if(e)e.textContent='Не вдається відтворити. Якщо файл щойно завантажено, зачекайте 1–2 хвилини й оновіть сторінку.'};
+  AU.onerror=()=>{const e=$('pe');if(e)e.textContent='Не вдається відтворити файл.'};
   $('pp').onclick=()=>AU.paused?AU.play().catch(()=>{}):AU.pause();
   $('sk').oninput=e=>{if(AU.duration)AU.currentTime=e.target.value/1000*AU.duration;pUI()};pUI()}
-const gh=(path,o={})=>fetch(`https://api.github.com/repos/${R}/contents/${path}`,{...o,headers:{Authorization:'Bearer '+TOKEN,Accept:'application/vnd.github+json'}});
-const chainRun=fn=>{const p=chain.then(fn);chain=p.catch(()=>{});return p};
-async function up(id,el){const f=el.files[0];el.value='';if(!f)return;const s=get(id);
-  if(f.size>25*1048576)return alert('Файл завеликий (максимум 25 МБ). Стисни mp3 до 128–192 kbps.');
-  if(!R)return alert('Не знайдено репозиторій: натисни Вийти, потім Увійти.');
-  setSt('Завантаження mp3…');
-  try{const b64=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=no;r.readAsDataURL(f)});
-    const ext=((f.name.match(/\.(\w{2,4})$/)||[])[1]||'mp3').toLowerCase(),path=`audio/${id}-${Date.now()}.${ext}`;
-    await chainRun(async()=>{const r=await gh(path,{method:'PUT',body:JSON.stringify({message:'Додано аудіо',content:b64})});
-      if(!r.ok){let m='';try{m=(await r.json()).message}catch(e){}throw new Error(r.status+(m?' - '+m:''))}});
-    const old=s.audio;s.audio=path;LOCAL[id]=URL.createObjectURL(f);AUid=null;save();go(id,false);if(old&&unused(old))delFile(old)}
-  catch(e){setSt('Помилка завантаження: '+e.message)}}
-function delFile(path){chainRun(async()=>{const g=await gh(path+'?t='+Date.now());if(!g.ok)return;const sha=(await g.json()).sha;
-  await gh(path,{method:'DELETE',body:JSON.stringify({message:'Видалено аудіо',sha})})}).catch(()=>{})}
-function rmA(id){if(!confirm('Видалити аудіофайл?'))return;const s=get(id),old=s.audio;s.audio=null;delete LOCAL[id];AU.pause();AUid=null;save();if(old&&unused(old))delFile(old);go(id,false)}
-function yc(id,el){const s=get(id),v=el.value.trim();if(!v)s.yt=null;else{const i=ytId(v);if(!i){alert('Не схоже на посилання YouTube');el.value=s.yt?'https://youtu.be/'+s.yt:'';return}s.yt=i}save();go(id,false)}
-async function push(n=0){if(!R)throw new Error('не знайдено репозиторій: натисни Вийти, потім Увійти');
-  const url=`https://api.github.com/repos/${R}/contents/data.json`,h={Authorization:'Bearer '+TOKEN,Accept:'application/vnd.github+json'};
-  const g=await fetch(url+'?t='+Date.now(),{headers:h});if(!g.ok&&g.status!=404)throw new Error(g.status+' - не вдалося прочитати data.json');
-  const sha=g.ok?(await g.json()).sha:undefined;
-  const content=btoa(unescape(encodeURIComponent(JSON.stringify({setlists:SL},null,1))));
-  const p=await fetch(url,{method:'PUT',headers:h,body:JSON.stringify({message:'Оновлення сетліста',content,sha})});
-  if(!p.ok){if((p.status==409||p.status==422)&&n<2)return push(n+1);let m='';try{m=(await p.json()).message}catch(e){}throw new Error(p.status+(m?' - '+m:''))}}
-async function load(){let d=null;
-  try{if(TOKEN&&R){const r=await fetch(`https://api.github.com/repos/${R}/contents/data.json?t=${Date.now()}`,{headers:{Authorization:'Bearer '+TOKEN,Accept:'application/vnd.github.raw+json'}});if(r.ok)d=await r.json()}}catch(e){}
-  if(!d)try{d=await (await fetch('data.json?t='+Date.now())).json()}catch(e){}
-  if(d)SL=d.setlists||[{id:1,title:d.title||'Сетліст',date:'',time:'',songs:d.songs||[]}];
-  SL.forEach(l=>{l.songs=l.songs||[];l.date=l.date||'';l.time=l.time||'';l.songs.forEach(s=>{s.base=s.base||s.key;s.acc=s.acc||null;s.bpm=s.bpm||80;s.txt=s.txt||'';s.len=hasLen(s)?s.len:null;s.audio=s.audio||null;s.yt=s.yt||null})})}
-const unused=p=>!SL.some(l=>l.songs.some(s=>s.audio===p));
-async function login(){if(TOKEN){TOKEN='';try{localStorage.removeItem('gh_token')}catch(e){}return rr()}
-  R=repo();if(!R){R=prompt('Репозиторій у форматі логін/назва (наприклад ivan/setlist):')||'';if(!R)return}
-  const t=(prompt('Встав токен GitHub (його бачиш тільки ти):')||'').trim();if(!t)return;
-  try{const r=await fetch('https://api.github.com/repos/'+R,{headers:{Authorization:'Bearer '+t}});const j=await r.json();
-    if(!r.ok||!j.permissions||!j.permissions.push)return alert('Токен не підходить до цього репозиторію або не має права запису.');
-    TOKEN=t;try{localStorage.setItem('gh_token',t);localStorage.setItem('gh_repo',R)}catch(e){}await load();rr()}
-  catch(e){alert('Не вдалося перевірити токен.')}}
-function slCard(l){const q=total(l.songs),d=l.date?new Date(l.date+'T12:00'):null;
-  const meta=(d?DOW[d.getDay()]+(l.time?' · '+l.time:'')+' · ':'')+(l.songs.length?l.songs.length+' пісень · '+(q.miss?'~':'')+fmtT(q.t):'порожній');
-  return `<div class="song" onclick="nav({v:'sl',sl:${l.id}})" style="cursor:pointer;padding-left:10px"><div class="dt">${d?`<b>${d.getDate()}</b><span>${MS[d.getMonth()]}</span>`:'<b>—</b>'}</div>
+async function audioUrl(path){const c=AUC[path];if(c&&c.t>Date.now())return c.u;
+  const r=await sb.storage.from('audio').createSignedUrl(path,3600);if(r.error)throw r.error;AUC[path]={u:r.data.signedUrl,t:Date.now()+3300000};return r.data.signedUrl}
+async function upAudio(el){const f=el.files[0];el.value='';if(!f)return;
+  if(f.size>30*1048576)return alert('Файл завеликий (максимум 30 МБ).');
+  setSt('Завантаження mp3…');const song=CX.song,ext=((f.name.match(/\.(\w{2,4})$/)||[])[1]||'mp3').toLowerCase(),path=`${song.id}-${Date.now()}.${ext}`;
+  const r=await sb.storage.from('audio').upload(path,f,{contentType:f.type||(ext==='mp3'?'audio/mpeg':undefined)});
+  if(r.error)return fail(r.error);
+  const old=song.audio;setS({audio_path:path});if(old)sb.storage.from('audio').remove([old]);AUid=null;go(false)}
+async function rmAudio(){if(!confirm('Видалити аудіофайл?'))return;const old=CX.song.audio;
+  if(old)await sb.storage.from('audio').remove([old]);setS({audio_path:null});AU.pause();AUid=null;go(false)}
+// ---------- вхід
+const AERR={'Invalid login credentials':'Невірна пошта або пароль','Email not confirmed':'Пошту ще не підтверджено','User already registered':'Такий акаунт уже є'};
+function authView(msg=''){view='auth';$('app').className='';
+  $('app').innerHTML=`<div class="eyebrow">Worship</div><div class="ttl">${AM==='in'?'Вхід':'Реєстрація'}</div>
+<div class="box">${AM==='up'?'<label>Ім’я</label><input class="f" id="an" style="margin-bottom:12px">':''}<label>Пошта</label><input class="f" id="ae" type="email" autocomplete="email" style="margin-bottom:12px"><label>Пароль</label><input class="f" id="ap" type="password" autocomplete="${AM==='in'?'current-password':'new-password'}">
+<div class="meta" id="am">${E(msg)}</div><button class="p" style="width:100%;margin-top:14px" onclick="doAuth()">${AM==='in'?'Увійти':'Створити акаунт'}</button>
+<div class="r" style="justify-content:space-between;margin-top:12px"><button class="back" onclick="AM='${AM==='in'?'up':'in'}';authView()">${AM==='in'?'Немає акаунта? Реєстрація':'Вже є акаунт? Увійти'}</button>${AM==='in'?'<button class="back" onclick="forgot()">Забули пароль?</button>':''}</div></div>`;
+  $('ap').onkeydown=e=>{if(e.key==='Enter')doAuth()}}
+async function doAuth(){const em=$('ae').value.trim(),pw=$('ap').value;if(!em||!pw)return authView('Введіть пошту й пароль');
+  if(AM==='in'){const r=await sb.auth.signInWithPassword({email:em,password:pw});if(r.error)return authView(AERR[r.error.message]||r.error.message);return boot()}
+  if(pw.length<6)return authView('Пароль має бути не коротший за 6 символів');
+  const r=await sb.auth.signUp({email:em,password:pw,options:{data:{name:($('an').value||'').trim()}}});if(r.error)return authView(AERR[r.error.message]||r.error.message);
+  if(r.data.session)return boot();AM='in';authView('Лист для підтвердження надіслано. Підтвердіть пошту й увійдіть.')}
+async function forgot(){const em=$('ae').value.trim();if(!em)return authView('Спершу введіть пошту');
+  await sb.auth.resetPasswordForEmail(em,{redirectTo:location.href.split('#')[0]});authView('Лист зі скиданням пароля надіслано.')}
+function pendingView(){view='auth';$('app').innerHTML=`<div class="eyebrow">Worship</div><div class="ttl">Очікуємо підтвердження</div>
+<div class="box"><p style="margin:0 0 14px">Акаунт <b>${E(ME.email)}</b> створено. Керівник команди має підтвердити вам доступ.</p><div class="r" style="gap:8px"><button class="p" onclick="boot()">Перевірити знову</button><button onclick="logout()">Вийти</button></div></div>`}
+async function logout(){if(rt){sb.removeChannel(rt);rt=null}await sb.auth.signOut();ME=null;SONGS=[];SL=[];history.replaceState({v:'menu',d:0},'');authView()}
+async function boot(){try{const {data}=await sb.auth.getSession();if(!data.session)return authView();
+  const p=await sb.from('profiles').select('*').eq('id',data.session.user.id).maybeSingle();
+  ME=p.data||{id:data.session.user.id,email:data.session.user.email,role:'pending'};
+  if(ME.role==='pending')return pendingView();
+  await loadAll();subscribe();const st=history.state||{v:'menu',d:0};history.replaceState(st,'');render(st)}
+  catch(e){$('app').innerHTML=`<div class="box"><p>Не вдалося завантажити дані: ${E(e.message||e)}</p><button class="p" onclick="boot()">Спробувати ще</button> <button onclick="logout()">Вийти</button></div>`}}
+// ---------- меню сетлістів
+function slCard(l){const q=total(rows(l)),d=l.date?new Date(l.date+'T12:00'):null;
+  const meta=(d?DOW[d.getDay()]+(l.time?' · '+l.time:'')+' · ':'')+(l.items.length?l.items.length+' пісень · '+(q.miss?'~':'')+fmtT(q.t):'порожній');
+  return `<div class="song" onclick="nav({v:'sl',sl:'${l.id}'})" style="cursor:pointer;padding-left:10px"><div class="dt">${d?`<b>${d.getDate()}</b><span>${MS[d.getMonth()]}</span>`:'<b>—</b>'}</div>
 <div class="sb"><div class="sn">${E(l.title)||'Без назви'}</div><div class="meta" style="margin:2px 0 0">${meta}</div></div></div>`}
-function menu(){view='menu';const A=!!TOKEN,now=Date.now(),ups=sortUp(SL,now),pa=sortPast(SL,now),L=TAB==='up'?ups:pa;
-  $('app').innerHTML=`<div class="eyebrow">Worship</div><div class="ttl">Сетлісти</div>
+function menu(){view='menu';const A=isL(),now=Date.now(),ups=sortUp(SL,now),pa=sortPast(SL,now),L=TAB==='up'?ups:pa;
+  $('app').innerHTML=`<div class="r" style="justify-content:space-between"><div class="eyebrow">Worship</div><span class="meta" style="margin:0">${E(ME.name||ME.email)}</span></div><div class="ttl">Сетлісти</div>
 <div class="bar"><div class="seg" style="flex:1;margin-right:12px">${[['up','Майбутні',ups.length],['past','Минулі',pa.length]].map(([k,n,c])=>`<button class="${TAB==k?'on':''}" onclick="setTab('${k}')">${n} ${c}</button>`).join('')}</div>${A?'<button class="p" onclick="addSL()">+ Новий</button>':''}</div>
 <div>${L.map(slCard).join('')||`<p style="color:var(--mu)">${TAB==='up'?'Немає майбутніх сетлістів':'Минулих сетлістів поки немає'}</p>`}</div>
-<div style="margin-top:18px;display:flex"><button onclick="login()" style="margin-left:auto;opacity:.7">${A?'Вийти':'Увійти'}</button></div>`}
-function slView(){view='sl';const A=!!TOKEN,q=total(S);
-  $('app').innerHTML=`<div class="r" style="justify-content:space-between"><button class="back" onclick="goUp()">← Сетлісти</button>${S.length?`<button class="back" onclick="nav({v:'stage',sl:${cur.id},i:0})">На сцені ▶</button>`:''}</div>
+<div class="r" style="margin-top:14px;gap:8px;flex-wrap:wrap"><button onclick="nav({v:'lib'})">Бібліотека пісень (${SONGS.length})</button>${A?`<button onclick="nav({v:'team'})">Команда</button>`:''}<button onclick="logout()" style="margin-left:auto;opacity:.7">Вийти</button></div>
+${A&&!SONGS.length?`<div class="box"><label>Імпорт</label><p class="meta" style="margin:0 0 12px">У базі ще немає пісень. Можна перенести пісні, сетлісти та mp3 зі старого сайту (data.json).</p><button class="p" onclick="importOld()">Імпортувати зі старого сайту</button></div>`:''}`}
+// ---------- сетліст
+function slView(){view='sl';const A=isL(),q=total(S);
+  $('app').innerHTML=`<div class="r" style="justify-content:space-between"><button class="back" onclick="goUp()">← Сетлісти</button>${S.length?`<button class="back" onclick="nav({v:'stage',sl:'${cur.id}',i:0})">На сцені ▶</button>`:''}</div>
 <input class="t" id="title" style="font-size:30px;font-weight:800;letter-spacing:-.02em" placeholder="Назва сетліста" value="${E(cur.title)}" ${A?'':'readonly'}>
 ${A?`<div class="r" style="margin-top:8px"><input class="f" type="date" id="dd" value="${cur.date}"><input class="f" type="time" id="tt" value="${cur.time}" style="width:130px"></div>`:`<div class="sub">${fmtD(cur)}</div>`}
-<div class="bar"><span>${S.length} пісень · ${q.miss?'~':''}${fmtT(q.t)}${A?' · тримай ⠿ і перетягуй':''}</span>${A?'<button class="p" onclick="add()">+ Пісня</button>':''}</div>
-<div id="list">${S.map((s,i)=>`<div class="song" data-id="${s.id}">${A?'<span class="h">⠿</span>':'<span style="width:8px"></span>'}<span class="n">${i+1}</span>
-<div class="sb" onclick="nav({v:'song',sl:${cur.id},song:${s.id}})"><div class="sn">${E(s.name)||'Без назви'}</div></div><span class="len">${hasLen(s)?fmtT(s.len):''}</span><span class="pill k">${kl(s.key,isG(s.txt))}</span><span class="pill">${fmtB(s.bpm)}</span></div>`).join('')||'<p style="color:var(--mu)">Пісень ще немає</p>'}</div>
+<div class="bar"><span>${S.length} пісень · ${q.miss?'~':''}${fmtT(q.t)}${A?' · тримай ⠿ і перетягуй':''}</span>${A?`<button class="p" onclick="nav({v:'pick',sl:'${cur.id}'})">+ Пісня</button>`:''}</div>
+<div id="list">${S.map((s,i)=>`<div class="song" data-id="${s.item.id}">${A?'<span class="h">⠿</span>':'<span style="width:8px"></span>'}<span class="n">${i+1}</span>
+<div class="sb" onclick="nav({v:'song',sl:'${cur.id}',item:'${s.item.id}'})"><div class="sn">${E(s.name)||'Без назви'}</div></div><span class="len">${hasLen(s)?fmtT(s.len):''}</span><span class="pill k">${kl(s.key,isG(s.txt))}</span><span class="pill">${fmtB(s.bpm)}</span></div>`).join('')||'<p style="color:var(--mu)">Пісень ще немає</p>'}</div>
 <div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="cp()">Скопіювати</button><button onclick="print()">Друк</button>${A?'<button onclick="dupSL()">Дублювати</button><button class="x" onclick="delSL()">Видалити сетліст</button>':''}</div>`;
-  if(A){$('title').oninput=e=>{cur.title=e.target.value;save()};$('dd').onchange=e=>{cur.date=e.target.value;save()};$('tt').onchange=e=>{cur.time=e.target.value;save()};
+  if(A){$('title').oninput=e=>{cur.title=e.target.value;upd('setlists',cur.id,{title:cur.title})};
+    $('dd').onchange=e=>{cur.date=e.target.value;upd('setlists',cur.id,{date:cur.date||null})};$('tt').onchange=e=>{cur.time=e.target.value;upd('setlists',cur.id,{time:cur.time||null})};
     document.querySelectorAll('.h').forEach(h=>h.onpointerdown=dragStart)}}
+function dragStart(e){e.preventDefault();dragging=true;const card=e.target.closest('.song'),items=[...$('list').children],from=items.indexOf(card),
+  step=card.offsetHeight+8,y0=e.clientY,s0=scrollY;let y=y0,to=from,raf;
+  card.classList.add('drag');try{e.target.setPointerCapture(e.pointerId)}catch(_){}
+  const upd2=()=>{const dy=y-y0+scrollY-s0;card.style.transform=`translateY(${dy}px) scale(1.03)`;
+    to=Math.max(0,Math.min(items.length-1,Math.round(from+dy/step)));
+    items.forEach((c,i)=>{if(c!==card)c.style.transform=from<i&&i<=to?`translateY(${-step}px)`:to<=i&&i<from?`translateY(${step}px)`:''})};
+  const loop=()=>{if(y<90)scrollBy(0,-10);else if(y>innerHeight-90)scrollBy(0,10);upd2();raf=requestAnimationFrame(loop)};
+  const mv=ev=>{y=ev.clientY};
+  const up=()=>{cancelAnimationFrame(raf);removeEventListener('pointermove',mv);removeEventListener('pointerup',up);removeEventListener('pointercancel',up);
+    card.classList.remove('drag');card.style.transform=`translateY(${(to-from)*step}px)`;setTimeout(()=>{dragging=false;reorder(from,to)},260)};
+  addEventListener('pointermove',mv);addEventListener('pointerup',up);addEventListener('pointercancel',up);loop()}
+async function reorder(from,to){const o=cur.items.splice(from,1)[0];cur.items.splice(to,0,o);cur.items.forEach((it,i)=>it.position=i);rr();
+  lastOwn=Date.now();setSt('Збереження…');
+  const r=await sb.from('setlist_items').upsert(cur.items.map(({id,setlist_id,song_id,position,key,acc,bpm})=>({id,setlist_id,song_id,position,key,acc,bpm})));
+  setSt(r.error?'Помилка: '+r.error.message:'Збережено ✓')}
+async function addSL(){const r=await sb.from('setlists').insert({title:'Новий сетліст'}).select().single();if(r.error)return fail(r.error);
+  const l={...r.data,date:'',time:'',items:[]};SL.push(l);nav({v:'sl',sl:l.id})}
+async function dupSL(){const r=await sb.from('setlists').insert({title:cur.title+' (копія)'}).select().single();if(r.error)return fail(r.error);
+  const l={...r.data,date:'',time:'',items:[]};
+  if(cur.items.length){const ir=await sb.from('setlist_items').insert(cur.items.map((it,i)=>({setlist_id:l.id,song_id:it.song_id,position:i,key:it.key,acc:it.acc,bpm:it.bpm}))).select();if(ir.error)return fail(ir.error);l.items=ir.data}
+  SL.push(l);nav({v:'sl',sl:l.id})}
+async function delSL(){if(!confirm('Видалити сетліст «'+cur.title+'»? Пісні в бібліотеці залишаться.'))return;
+  const r=await sb.from('setlists').delete().eq('id',cur.id);if(r.error)return fail(r.error);SL=SL.filter(x=>x!==cur);goUp()}
+function cp(){const q=total(S),t=cur.title+(cur.date?' · '+fmtD(cur):'')+'\n'+S.map((s,i)=>`${i+1}. ${s.name} — ${kl(s.key,isG(s.txt))}, ${fmtB(s.bpm)} BPM${hasLen(s)?', '+fmtT(s.len):''}`).join('\n')+`\nУсього: ${q.miss?'~':''}${fmtT(q.t)}`;
+  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>alert('Скопійовано'),()=>prompt('Скопіюй:',t))}
+// ---------- бібліотека й вибір пісні
+const sorted=q=>SONGS.filter(s=>!q||s.name.toLowerCase().includes(q.toLowerCase())).sort((a,b)=>a.name.localeCompare(b.name,'uk'));
+const libList=()=>sorted(LQ).map(s=>`<div class="song" onclick="nav({v:'song',song:'${s.id}'})" style="cursor:pointer;padding-left:14px"><div class="sb"><div class="sn">${E(s.name)||'Без назви'}</div></div><span class="len">${hasLen(s)?fmtT(s.len):''}</span><span class="pill k">${kl(s.base,isG(s.txt))}</span><span class="pill">${fmtB(s.bpm)}</span></div>`).join('')||'<p class="meta">Нічого не знайдено</p>';
+function libView(){view='lib';const A=isL();
+  $('app').innerHTML=`<div class="r" style="justify-content:space-between"><button class="back" onclick="goUp()">← Сетлісти</button></div><div class="ttl">Бібліотека</div>
+<div class="bar"><span>${SONGS.length} пісень</span>${A?'<button class="p" onclick="newSong(false)">+ Нова пісня</button>':''}</div>
+<input class="f" id="q" placeholder="Пошук" value="${E(LQ)}" style="margin-bottom:12px"><div id="pl">${libList()}</div>`;
+  $('q').oninput=e=>{LQ=e.target.value;$('pl').innerHTML=libList()}}
+const pickList=()=>{const has=new Set(cur.items.map(i=>i.song_id));return sorted(LQ).map(s=>`<div class="song" onclick="addItem('${s.id}')" style="cursor:pointer;padding-left:14px"><div class="sb"><div class="sn">${E(s.name)||'Без назви'}</div></div>${has.has(s.id)?'<span class="len">✓ в сетлісті</span>':''}<span class="pill k">${kl(s.base,isG(s.txt))}</span></div>`).join('')||'<p class="meta">Нічого не знайдено</p>'};
+function pickView(){view='pick';
+  $('app').innerHTML=`<div class="r" style="justify-content:space-between"><button class="back" onclick="goUp()">← ${E(cur.title)}</button></div><div class="ttl">Додати пісню</div>
+<button class="p" style="width:100%;margin:14px 0" onclick="newSong(true)">+ Створити нову пісню</button>
+<input class="f" id="q" placeholder="Пошук у бібліотеці" value="${E(LQ)}" style="margin-bottom:12px"><div id="pl">${pickList()}</div>`;
+  $('q').oninput=e=>{LQ=e.target.value;$('pl').innerHTML=pickList()}}
+async function addItem(id){if(cur.items.some(i=>i.song_id===id))return setSt('Вже в сетлісті');
+  const r=await sb.from('setlist_items').insert({setlist_id:cur.id,song_id:id,position:cur.items.length,key:songOf(id).base}).select().single();
+  if(r.error)return fail(r.error);cur.items.push(r.data);lastOwn=Date.now();setSt('Додано ✓');$('pl').innerHTML=pickList()}
+async function newSong(toSl){const r=await sb.from('songs').insert({title:'',base_key:'C'}).select().single();if(r.error)return fail(r.error);
+  const s=norm(r.data);SONGS.push(s);let st;
+  if(toSl){const ir=await sb.from('setlist_items').insert({setlist_id:cur.id,song_id:s.id,position:cur.items.length,key:'C'}).select().single();if(ir.error)return fail(ir.error);cur.items.push(ir.data);st={v:'song',sl:cur.id,item:ir.data.id}}
+  else st={v:'song',song:s.id};
+  editTxt=true;nav(st)}
+// ---------- команда
+async function teamView(){view='team';
+  $('app').innerHTML=`<div class="r" style="justify-content:space-between"><button class="back" onclick="goUp()">← Сетлісти</button></div><div class="ttl">Команда</div><div id="tm" class="meta" style="margin-top:14px">Завантаження…</div>`;
+  const r=await sb.from('profiles').select('*').order('created_at');if(r.error)return fail(r.error);
+  const ord={pending:0,leader:1,member:2},L=r.data.sort((a,b)=>ord[a.role]-ord[b.role]);
+  const rl={pending:'Очікує',member:'Учасник',leader:'Керівник'};
+  if(view!=='team')return;
+  $('tm').outerHTML=`<div>${L.map(p=>`<div class="song" style="padding-left:14px"><div class="sb"><div class="sn">${E(p.name||p.email)}</div><div class="meta" style="margin:2px 0 0">${E(p.email)}</div></div>
+<select style="width:130px" ${p.id===ME.id?'disabled':''} onchange="setRole('${p.id}',this.value)">${['pending','member','leader'].map(k=>`<option value="${k}" ${p.role===k?'selected':''}>${rl[k]}</option>`).join('')}</select></div>`).join('')}</div>
+<p class="meta">«Очікує» не бачить нічого. «Учасник» бачить усе, але нічого не змінює. «Керівник» може все.</p>`}
+async function setRole(id,role){const r=await sb.from('profiles').update({role}).eq('id',id);setSt(r.error?'Помилка: '+r.error.message:'Збережено ✓')}
+// ---------- імпорт зі старого сайту
+async function importOld(){if(!confirm('Імпортувати пісні, сетлісти та mp3 зі старого сайту (data.json)?'))return;
+  let ok=0,bad=0,au=0,auBad=0;
+  try{setSt('Читаю data.json…');const d=await (await fetch('data.json?t='+Date.now())).json();
+    const old=d.setlists||[{title:d.title||'Сетліст',date:'',time:'',songs:d.songs||[]}],byTitle={};
+    for(const l of old){const lr=await sb.from('setlists').insert({title:l.title||'Сетліст',date:l.date||null,time:l.time||null}).select().single();if(lr.error)throw lr.error;let pos=0;
+      for(const s of (l.songs||[])){let song=byTitle[s.name];
+        if(!song){setSt('Імпорт: '+(s.name||'')+'…');
+          const r=await sb.from('songs').insert({title:s.name||'',base_key:s.base||s.key||'C',txt:s.txt||'',bpm:s.bpm||80,length_sec:s.len||null,youtube:s.yt||null}).select().single();
+          if(r.error){bad++;continue}song=byTitle[s.name]=r.data;ok++;
+          if(s.audio){try{const resp=await fetch(s.audio);if(!resp.ok)throw 0;const blob=await resp.blob(),ext=(s.audio.match(/\.(\w+)$/)||[])[1]||'mp3',path=`${song.id}-${Date.now()}.${ext}`;
+            const u=await sb.storage.from('audio').upload(path,blob,{contentType:ext==='mp3'?'audio/mpeg':blob.type});
+            if(u.error)throw 0;await sb.from('songs').update({audio_path:path}).eq('id',song.id);au++}catch(e){auBad++}}}
+        const ir=await sb.from('setlist_items').insert({setlist_id:lr.data.id,song_id:song.id,position:pos++,key:s.key||null,acc:s.acc||null});if(ir.error)bad++}}
+    await loadAll();rr();setSt('');alert(`Готово. Пісень: ${ok}, сетлістів: ${old.length}. Аудіо: ${au}${auBad?' (не вдалося: '+auBad+')':''}.${bad?' Помилок: '+bad+'.':''}`)}
+  catch(e){setSt('');alert('Імпорт зупинився: '+((e&&e.message)||e)+'\nМожна запустити ще раз, але спершу перевірте, що в бібліотеці немає дублікатів.')}}
+// ---------- сторінка пісні
 const segH=()=>`<div class="seg" style="flex:1">${[['all','Усе'],['chords','Акорди'],['lyrics','Текст']].map(([k,n])=>`<button class="${vm==k?'on':''}" onclick="setVm('${k}')">${n}</button>`).join('')}</div>`;
+function go(fresh=true){view='song';const song=CX.song,item=CX.item;if(!song)return goUp();
+  const s=mk(song,item),g=isG(s.txt),A=isL(),ea=s.acc||defAcc(s.key);
+  $('app').className=fresh?'':'noanim';
+  const ak=song.id+':'+(song.audio||'');
+  if(AUid!==ak){AU.pause();AUid=ak;AU.removeAttribute('src');if(song.audio)audioUrl(song.audio).then(u=>{if(AUid===ak)AU.src=u}).catch(()=>{const e=$('pe');if(e)e.textContent='Не вдалося отримати файл'})}
+  const opt=k=>`<option value="${k}" ${k==s.key?'selected':''}>${kl(k,g)}</option>`;
+  const sel=`<select onchange="tk(this.value)"><optgroup label="Мажор">${MAJ.map(opt).join('')}</optgroup><optgroup label="Мінор">${MIN.map(opt).join('')}</optgroup></select>`;
+  const body=A&&editTxt?`<textarea id="tx" placeholder="Акорди пиши окремим рядком над текстом">${E(show(s))}</textarea>`:
+    `<pre style="font-size:${fs}px">${viewText(show(s),vm).split('\n').map(l=>chordLine(l)?'<span class="ch">'+E(l)+'</span>':E(l)).join('\n')||'<span style="color:var(--mu)">Порожньо</span>'}</pre>`;
+  const pl=song.audio?`<div class="pl"><button class="pp" id="pp" aria-label="Грати / пауза"></button><div class="pw"><input type="range" class="sk" id="sk" min="0" max="1000" value="0"><div class="tm2"><span id="tc">0:00</span><span id="td">0:00</span></div></div></div><div class="pe" id="pe"></div>`:'';
+  const aBox=(song.audio||A)?`<div class="box"><label>Плейбек</label>${pl}${A?`<input type="file" id="fa" accept="audio/*,.mp3" hidden onchange="upAudio(this)"><div class="r" style="margin-top:${song.audio?14:0}px"><button onclick="$('fa').click()">${song.audio?'Замінити mp3':'+ Завантажити mp3'}</button>${song.audio?`<button class="x" onclick="rmAudio()">Видалити файл</button>`:''}</div>`:''}</div>`:'';
+  const yBox=(song.yt||A)?`<div class="box"><label>Виконання на YouTube</label>${song.yt?`<iframe class="yt" src="https://www.youtube-nocookie.com/embed/${song.yt}?playsinline=1&rel=0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture" allowfullscreen loading="lazy"></iframe><a class="lnk" href="https://www.youtube.com/watch?v=${song.yt}" target="_blank" rel="noopener">Відкрити на YouTube ↗</a>`:''}${A?`<input class="f" type="text" placeholder="Посилання на YouTube" value="${song.yt?'https://youtu.be/'+song.yt:''}" style="margin-top:${song.yt?14:0}px" onchange="yc(this)">`:''}</div>`:'';
+  const keyBox=A&&(item||editTxt)?`<div class="box"><label>${editTxt?'Тональність акордів у тексті':'Тональність у цьому сетлісті'}</label><div class="r">${editTxt?sel:`<button class="step" onclick="tp(-1)">−</button>${sel}<button class="step" onclick="tp(1)">+</button><button class="step" title="♭ / ♯" onclick="ta()">${ea==='b'?'♭':'♯'}</button>`}</div>${!editTxt&&s.key!==s.base?`<div class="meta">оригінал: ${kl(s.base,g)}</div>`:''}</div>`:
+    A?`<div class="box r" style="gap:12px"><span class="pill k" style="font-size:20px">${kl(s.base,g)}</span><span class="meta" style="margin:0">тональність запису; у сетлісті її можна змінити</span></div>`:'';
+  const bpmBox=A?`<div class="box"><label>Темп, BPM</label><div class="r"><button class="step" onclick="bp(-1)">−</button>
+<input class="bpm" type="text" inputmode="decimal" value="${fmtB(s.bpm)}" oninput="bi(this)" onchange="bc(this)" onkeydown="if(event.key==='Enter')this.blur()"><button class="step" onclick="bp(1)">+</button></div></div>
+<div class="box"><label>Тривалість пісні</label><div class="r"><input class="tm" id="lm" type="text" inputmode="numeric" placeholder="хв" value="${s.len!=null?Math.floor(s.len/60):''}" oninput="ld()" onchange="lc()"><b style="font-size:22px">:</b><input class="tm" id="ls" type="text" inputmode="numeric" placeholder="сек" value="${s.len!=null?String(s.len%60).padStart(2,'0'):''}" oninput="ld()" onchange="lc()"></div></div>`:
+    `<div class="box r" style="gap:12px"><span class="pill k" style="font-size:20px">${kl(s.key,g)}</span><span class="pill" style="font-size:20px">${fmtB(s.bpm)} BPM</span>${hasLen(s)?`<span class="pill" style="font-size:20px">${fmtT(s.len)}</span>`:''}</div>`;
+  $('app').innerHTML=`<div class="r" style="justify-content:space-between"><button class="back" onclick="goUp()">← ${item?E(cur.title)||'Сетліст':'Бібліотека'}</button>${item?`<button class="back" onclick="nav({v:'stage',sl:'${cur.id}',i:${S.findIndex(r=>r.item&&r.item.id===item.id)}})">На сцені ▶</button>`:''}</div>
+<input class="t" id="nm" style="font-size:26px;font-weight:800" placeholder="Назва пісні" value="${E(song.name)}" ${A?'':'readonly'}>
+${keyBox}${bpmBox}
+<div class="box"><div class="r" style="justify-content:space-between;margin-bottom:10px"><label style="margin:0">Акорди й текст</label>${A?`<button onclick="editTxt=!editTxt;go(false)">${editTxt?'Готово':'Редагувати'}</button>`:''}</div>
+${editTxt?'':`<div class="r" style="margin-bottom:12px">${segH()}<button class="step" onclick="fz(-2)">A−</button><button class="step" onclick="fz(2)">A+</button></div>`}${body}</div>
+${aBox}${yBox}
+${A?`<div class="r" style="margin-top:14px;gap:8px;flex-wrap:wrap">${item?'<button class="x" onclick="rmItem()">Прибрати з сетліста</button>':''}<button class="x" onclick="delSong()">Видалити з бібліотеки</button></div>`:''}`;
+  if(A){$('nm').oninput=e=>setS({title:e.target.value});
+    if($('tx'))$('tx').oninput=e=>{const k=mk(CX.song,CX.item).key;setS({txt:e.target.value,base_key:k});if(CX.item)setI({key:k,acc:null})}}
+  pInit()}
+function tk(k){const s=mk(CX.song,CX.item);if(editTxt){setS({txt:show(s),base_key:k});if(CX.item)setI({key:k,acc:null})}else setI({key:k,acc:null});go(false)}
+function tp(d){const s=mk(CX.song,CX.item),n=((kIdx(s.key)+d)%12+12)%12;tk((s.key.endsWith('m')?MIN:MAJ)[n])}
+function ta(){const s=mk(CX.song,CX.item);setI({acc:(s.acc||defAcc(s.key))==='b'?'#':'b'});go(false)}
+const cl=v=>Math.max(30,Math.min(300,v));
+function bp(d){setS({bpm:cl(Math.round((CX.song.bpm+d)*100)/100)});go(false)}
+function bi(el){const v=parseB(el.value);if(v>=30&&v<=300)setS({bpm:Math.round(v*100)/100})}
+function bc(el){const v=parseB(el.value);setS({bpm:cl(isNaN(v)?CX.song.bpm:Math.round(v*100)/100)});el.value=fmtB(CX.song.bpm)}
+function ld(){const m=parseInt($('lm').value,10),c=parseInt($('ls').value,10);setS({length_sec:(isNaN(m)&&isNaN(c))?null:Math.max(0,(m||0)*60+(c||0))||null})}
+function lc(){ld();const s=CX.song;$('lm').value=s.len==null?'':Math.floor(s.len/60);$('ls').value=s.len==null?'':String(s.len%60).padStart(2,'0')}
+function yc(el){const v=el.value.trim();if(!v)setS({youtube:null});else{const i=ytId(v);if(!i){alert('Не схоже на посилання YouTube');el.value=CX.song.yt?'https://youtu.be/'+CX.song.yt:'';return}setS({youtube:i})}go(false)}
+async function rmItem(){if(!confirm('Прибрати пісню з цього сетліста? У бібліотеці вона залишиться.'))return;
+  const r=await sb.from('setlist_items').delete().eq('id',CX.item.id);if(r.error)return fail(r.error);cur.items=cur.items.filter(i=>i.id!==CX.item.id);goUp()}
+async function delSong(){const s=CX.song;if(!confirm('Видалити «'+(s.name||'без назви')+'» з бібліотеки та з усіх сетлістів?'))return;
+  if(s.audio)await sb.storage.from('audio').remove([s.audio]);
+  const r=await sb.from('songs').delete().eq('id',s.id);if(r.error)return fail(r.error);
+  SONGS=SONGS.filter(x=>x.id!==s.id);SL.forEach(l=>{l.items=l.items.filter(i=>i.song_id!==s.id)});goUp()}
+// ---------- режим «на сцені»
 let WL=null;async function wake(on){try{if(on&&navigator.wakeLock&&!WL){WL=await navigator.wakeLock.request('screen');WL.onrelease=()=>{WL=null}}else if(!on&&WL){await WL.release();WL=null}}catch(e){}}
 function stageView(st){view='stage';wake(true);const s=S[st.i];if(!s)return goUp();const g=isG(s.txt),nx=S[st.i+1],pv=S[st.i-1];
   $('app').innerHTML=`<div class="stg"><div class="sin"><div class="sbar"><button class="step" onclick="goUp()">✕</button><div class="stt"><b>${st.i+1}/${S.length}</b> &nbsp;${E(s.name)||'Без назви'}</div><button class="step" onclick="fz(-2)">A−</button><button class="step" onclick="fz(2)">A+</button></div>
@@ -192,78 +330,26 @@ function stageView(st){view='stage';wake(true);const s=S[st.i];if(!s)return goUp
   let tx=0,ty=0;const a=$('app');a.ontouchstart=e=>{tx=e.changedTouches[0].clientX;ty=e.changedTouches[0].clientY};
   a.ontouchend=e=>{const dx=e.changedTouches[0].clientX-tx,dy=e.changedTouches[0].clientY-ty;if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.5)stp(dx<0?1:-1)}}
 function stp(d){const i=ST.i+d;if(i<0||i>=S.length)return;const n={v:'stage',sl:ST.sl,i,d:ST.d};history.replaceState(n,'');render(n)}
+function fz(d){fs=Math.max(12,Math.min(40,fs+d));try{localStorage.setItem('fs',fs)}catch(e){}const p=document.querySelector('pre');if(p)p.style.fontSize=fs+'px'}
+function setVm(v){vm=v;try{localStorage.setItem('vm',v)}catch(e){}rr()}
+function setTab(k){TAB=k;rr()}
+// ---------- навігація
 function render(st,fresh=true){if(view==='stage'&&st.v!=='stage'){wake(false);$('app').ontouchstart=$('app').ontouchend=null}
   ST=st;if(st.v!=='song'){AU.pause();AUid=null;editTxt=false}
   $('app').className=fresh?'':'noanim';
-  const l=st.sl!=null?SL.find(x=>x.id==st.sl):null;
-  if(st.v!=='menu'&&!l){ST={v:'menu',d:0};return menu()}
-  if(l){cur=l;S=l.songs}
-  if(st.v==='menu')menu();else if(st.v==='sl')slView();else if(st.v==='song')go(st.song,fresh);else stageView(st)}
+  if(st.v==='menu')return menu();if(st.v==='lib')return libView();if(st.v==='team')return teamView();
+  let l=null;if(st.sl){l=SL.find(x=>x.id===st.sl);if(!l){ST={v:'menu',d:0};return menu()}cur=l;S=rows(l)}
+  if(st.v==='sl')return slView();if(st.v==='pick')return pickView();if(st.v==='stage')return stageView(st);
+  const item=l?l.items.find(i=>i.id===st.item):null,song=songOf(st.song||(item&&item.song_id));
+  if(!song){ST={v:'menu',d:0};return menu()}
+  CX={song,item};go(fresh)}
 const rr=()=>render(ST,false);
 function nav(st){st.d=(ST.d||0)+1;history.pushState(st,'');render(st)}
 function goUp(){if(history.state&&history.state.d>0)return history.back();
-  const p=ST.v==='sl'?{v:'menu',d:0}:{v:'sl',sl:ST.sl,d:0};history.replaceState(p,'');render(p)}
-function setTab(k){TAB=k;rr()}
-function addSL(){const l={id:Date.now(),title:'Новий сетліст',date:'',time:'',songs:[]};SL.push(l);save();nav({v:'sl',sl:l.id})}
-function dupSL(){const l={id:Date.now(),title:cur.title+' (копія)',date:'',time:'',songs:JSON.parse(JSON.stringify(cur.songs)).map((x,i)=>({...x,id:Date.now()+i+1}))};SL.push(l);save();nav({v:'sl',sl:l.id})}
-function delSL(){if(!confirm('Видалити сетліст «'+cur.title+'» разом з усіма піснями?'))return;const o=cur;SL=SL.filter(x=>x!==o);save();o.songs.forEach(s=>{if(s.audio&&unused(s.audio))delFile(s.audio)});goUp()}
-function fz(d){fs=Math.max(12,Math.min(40,fs+d));try{localStorage.setItem('fs',fs)}catch(e){}const p=document.querySelector('pre');if(p)p.style.fontSize=fs+'px'}
-function dragStart(e){e.preventDefault();const card=e.target.closest('.song'),items=[...$('list').children],from=items.indexOf(card),
-  step=card.offsetHeight+8,y0=e.clientY,s0=scrollY;let y=y0,to=from,raf;
-  card.classList.add('drag');try{e.target.setPointerCapture(e.pointerId)}catch(_){}
-  const upd=()=>{const dy=y-y0+scrollY-s0;card.style.transform=`translateY(${dy}px) scale(1.03)`;
-    to=Math.max(0,Math.min(items.length-1,Math.round(from+dy/step)));
-    items.forEach((c,i)=>{if(c!==card)c.style.transform=from<i&&i<=to?`translateY(${-step}px)`:to<=i&&i<from?`translateY(${step}px)`:''})};
-  const loop=()=>{if(y<90)scrollBy(0,-10);else if(y>innerHeight-90)scrollBy(0,10);upd();raf=requestAnimationFrame(loop)};
-  const mv=ev=>{y=ev.clientY};
-  const up=()=>{cancelAnimationFrame(raf);removeEventListener('pointermove',mv);removeEventListener('pointerup',up);removeEventListener('pointercancel',up);
-    card.classList.remove('drag');card.style.transform=`translateY(${(to-from)*step}px)`;
-    setTimeout(()=>{const o=S.splice(from,1)[0];S.splice(to,0,o);save();rr()},260)};
-  addEventListener('pointermove',mv);addEventListener('pointerup',up);addEventListener('pointercancel',up);loop()}
-function add(){if(!TOKEN)return;const s={id:Date.now(),name:'',key:'C',base:'C',acc:null,bpm:80,txt:''};S.push(s);save();editTxt=true;nav({v:'song',sl:cur.id,song:s.id})}
-function go(id,fresh=true){view='song';const s=get(id);if(!s)return goUp();const g=isG(s.txt),A=!!TOKEN,ea=s.acc||defAcc(s.key);
-  $('app').className=fresh?'':'noanim';
-  if(AUid!==id){AU.pause();AUid=id;if(s.audio)AU.src=LOCAL[id]||s.audio;else AU.removeAttribute('src')}
-  const opt=k=>`<option value="${k}" ${k==s.key?'selected':''}>${kl(k,g)}</option>`;
-  const sel=`<select onchange="tk(${id},this.value)"><optgroup label="Мажор">${MAJ.map(opt).join('')}</optgroup><optgroup label="Мінор">${MIN.map(opt).join('')}</optgroup></select>`;
-  const seg=`<div class="seg" style="flex:1">${[['all','Усе'],['chords','Акорди'],['lyrics','Текст']].map(([k,n])=>`<button class="${vm==k?'on':''}" onclick="setVm('${k}')">${n}</button>`).join('')}</div>`;
-  const body=A&&editTxt?`<textarea id="tx" placeholder="Акорди пиши окремим рядком над текстом">${E(show(s))}</textarea>`:
-    `<pre style="font-size:${fs}px">${viewText(show(s),vm).split('\n').map(l=>chordLine(l)?'<span class="ch">'+E(l)+'</span>':E(l)).join('\n')||'<span style="color:var(--mu)">Порожньо</span>'}</pre>`;
-  const pl=s.audio?`<div class="pl"><button class="pp" id="pp" aria-label="Грати / пауза"></button><div class="pw"><input type="range" class="sk" id="sk" min="0" max="1000" value="0"><div class="tm2"><span id="tc">0:00</span><span id="td">0:00</span></div></div></div><div class="pe" id="pe"></div>`:'';
-  const aBox=(s.audio||A)?`<div class="box"><label>Плейбек</label>${pl}${A?`<input type="file" id="fa" accept="audio/*,.mp3" hidden onchange="up(${id},this)"><div class="r" style="margin-top:${s.audio?14:0}px"><button onclick="$('fa').click()">${s.audio?'Замінити mp3':'+ Завантажити mp3'}</button>${s.audio?`<button class="x" onclick="rmA(${id})">Видалити файл</button>`:''}</div>`:''}</div>`:'';
-  const yBox=(s.yt||A)?`<div class="box"><label>Виконання на YouTube</label>${s.yt?`<iframe class="yt" src="https://www.youtube-nocookie.com/embed/${s.yt}?playsinline=1&rel=0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture" allowfullscreen loading="lazy"></iframe><a class="lnk" href="https://www.youtube.com/watch?v=${s.yt}" target="_blank" rel="noopener">Відкрити на YouTube ↗</a>`:''}${A?`<input class="f" type="text" placeholder="Посилання на YouTube" value="${s.yt?'https://youtu.be/'+s.yt:''}" style="margin-top:${s.yt?14:0}px" onchange="yc(${id},this)">`:''}</div>`:'';
-  $('app').innerHTML=`<div class="r" style="justify-content:space-between"><button class="back" onclick="goUp()">← ${E(cur.title)||'Сетліст'}</button>${S.length?`<button class="back" onclick="nav({v:'stage',sl:${cur.id},i:${S.indexOf(s)}})">На сцені ▶</button>`:''}</div>
-<input class="t" id="nm" style="font-size:26px;font-weight:800" placeholder="Назва пісні" value="${E(s.name)}" ${A?'':'readonly'}>
-${A?`<div class="box"><label>${editTxt?'Тональність акордів у тексті':'Тональність'}</label><div class="r">
-${editTxt?sel:`<button class="step" onclick="tp(${id},-1)">−</button>${sel}<button class="step" onclick="tp(${id},1)">+</button><button class="step" title="♭ / ♯" onclick="ta(${id})">${ea==='b'?'♭':'♯'}</button>`}</div>
-${!editTxt&&s.key!==s.base?`<div class="meta">оригінал: ${kl(s.base,g)}</div>`:''}</div>
-<div class="box"><label>Темп, BPM</label><div class="r"><button class="step" onclick="bp(${id},-1)">−</button>
-<input class="bpm" type="text" inputmode="decimal" value="${fmtB(s.bpm)}" oninput="bi(${id},this)" onchange="bc(${id},this)" onkeydown="if(event.key==='Enter')this.blur()">
-<button class="step" onclick="bp(${id},1)">+</button></div></div>
-<div class="box"><label>Тривалість пісні</label><div class="r"><input class="tm" id="lm" type="text" inputmode="numeric" placeholder="хв" value="${s.len!=null?Math.floor(s.len/60):''}" oninput="ld(${id})" onchange="lc(${id})">
-<b style="font-size:22px">:</b><input class="tm" id="ls" type="text" inputmode="numeric" placeholder="сек" value="${s.len!=null?String(s.len%60).padStart(2,'0'):''}" oninput="ld(${id})" onchange="lc(${id})"></div></div>`:
-`<div class="box r" style="gap:12px"><span class="pill k" style="font-size:20px">${kl(s.key,g)}</span><span class="pill" style="font-size:20px">${fmtB(s.bpm)} BPM</span>${hasLen(s)?`<span class="pill" style="font-size:20px">${fmtT(s.len)}</span>`:''}</div>`}
-<div class="box"><div class="r" style="justify-content:space-between;margin-bottom:10px"><label style="margin:0">Акорди й текст</label>${A?`<button onclick="editTxt=!editTxt;go(${id},false)">${editTxt?'Готово':'Редагувати'}</button>`:''}</div>
-${editTxt?'':`<div class="r" style="margin-bottom:12px">${seg}<button class="step" onclick="fz(-2)">A−</button><button class="step" onclick="fz(2)">A+</button></div>`}${body}</div>
-${aBox}${yBox}
-${A?`<button class="x" style="margin-top:14px" onclick="del(${id})">Видалити пісню</button>`:''}`;
-  if(A){$('nm').oninput=e=>{s.name=e.target.value;save()};if($('tx'))$('tx').oninput=e=>{s.txt=e.target.value;s.base=s.key;s.acc=null;save()}}pInit()}
-function setVm(v){vm=v;try{localStorage.setItem('vm',v)}catch(e){}rr()}
-function tk(id,k){const s=get(id);if(editTxt){s.txt=show(s);s.base=k}s.key=k;s.acc=null;save();go(id,false)}
-function tp(id,d){const s=get(id),n=((kIdx(s.key)+d)%12+12)%12;tk(id,(s.key.endsWith('m')?MIN:MAJ)[n])}
-function ta(id){const s=get(id);s.acc=(s.acc||defAcc(s.key))==='b'?'#':'b';save();go(id,false)}
-const cl=v=>Math.max(30,Math.min(300,v));
-function bp(id,d){const s=get(id);s.bpm=cl(Math.round((s.bpm+d)*100)/100);save();go(id,false)}
-function bi(id,el){const v=parseB(el.value);if(v>=30&&v<=300){get(id).bpm=Math.round(v*100)/100;save()}}
-function bc(id,el){const s=get(id),v=parseB(el.value);s.bpm=cl(isNaN(v)?s.bpm:Math.round(v*100)/100);el.value=fmtB(s.bpm);save()}
-function ld(id){const s=get(id),m=parseInt($('lm').value,10),c=parseInt($('ls').value,10);
-  s.len=(isNaN(m)&&isNaN(c))?null:Math.max(0,(m||0)*60+(c||0))||null;save()}
-function lc(id){ld(id);const s=get(id);$('lm').value=s.len==null?'':Math.floor(s.len/60);$('ls').value=s.len==null?'':String(s.len%60).padStart(2,'0')}
-function del(id){if(!confirm('Видалити пісню?'))return;const i=S.findIndex(x=>x.id==id),[o]=S.splice(i,1);save();if(o&&o.audio&&unused(o.audio))delFile(o.audio);goUp()}
-function cp(){const q=total(S),t=cur.title+(cur.date?' · '+fmtD(cur):'')+'\n'+S.map((s,i)=>`${i+1}. ${s.name} — ${kl(s.key,isG(s.txt))}, ${fmtB(s.bpm)} BPM${hasLen(s)?', '+fmtT(s.len):''}`).join('\n')+`\nУсього: ${q.miss?'~':''}${fmtT(q.t)}`;
-  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>alert('Скопійовано'),()=>prompt('Скопіюй:',t))}
-addEventListener('popstate',e=>render(e.state||{v:'menu',d:0}));
+  const p=ST.v==='song'?(ST.sl?{v:'sl',sl:ST.sl,d:0}:{v:'lib',d:0}):(ST.v==='stage'||ST.v==='pick')?{v:'sl',sl:ST.sl,d:0}:{v:'menu',d:0};history.replaceState(p,'');render(p)}
+addEventListener('popstate',e=>{if(ME&&ME.role!=='pending')render(e.state||{v:'menu',d:0})});
 addEventListener('keydown',e=>{if(view!=='stage'||/INPUT|TEXTAREA/.test(document.activeElement.tagName))return;if(e.key==='ArrowRight')stp(1);else if(e.key==='ArrowLeft')stp(-1);else if(e.key==='Escape')goUp()});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&view==='stage')wake(true)});
-load().then(()=>{const st=history.state||{v:'menu',d:0};history.replaceState(st,'');render(st)});
+sb.auth.onAuthStateChange(ev=>{if(ev==='PASSWORD_RECOVERY'){const p=prompt('Введіть новий пароль:');if(p)sb.auth.updateUser({password:p}).then(r=>alert(r.error?r.error.message:'Пароль змінено'))}});
+boot();
 </script></body></html>
